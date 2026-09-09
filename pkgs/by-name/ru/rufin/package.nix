@@ -3,18 +3,21 @@
   fetchFromGitHub,
   rustPlatform,
   cacert,
+  cmake,
   glib,
+  glib-networking,
   gettext,
   gst_all_1,
   gtk4,
   libadwaita,
+  ninja,
   pkg-config,
   wrapGAppsHook4,
 }:
 
 rustPlatform.buildRustPackage (finalAttrs: {
   pname = "rufin";
-  version = "0.13.1";
+  version = "0.15.0";
 
   __structuredAttrs = true;
 
@@ -22,21 +25,24 @@ rustPlatform.buildRustPackage (finalAttrs: {
     owner = "screwys";
     repo = "Rufin";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-BCn88jedL9+5rLjwHmOIiG6Yg6EZwcDOALEJgDvzfNs=";
+    hash = "sha256-ps3lfdNAXJwlhgpwPMJFASq+DwGYy8ZTQAHffB+yfCM=";
   };
 
-  cargoHash = "sha256-kAti4GinC/zcAuhuQi/t/VnbY0laie9BEeUphXLc/M8=";
+  cargoHash = "sha256-bDFO1wd96v/a/xEWgexDhwnWmbB5vAfsej6nMiDj9SI=";
 
   strictDeps = true;
 
   nativeBuildInputs = [
+    cmake
     gettext
+    ninja
     pkg-config
     wrapGAppsHook4
   ];
 
   buildInputs = [
     glib
+    glib-networking
     gtk4
     libadwaita
   ]
@@ -49,49 +55,40 @@ rustPlatform.buildRustPackage (finalAttrs: {
     gst-libav
   ]);
 
-  cargoBuildFlags = [
-    "-p"
-    "rufin"
-  ];
-
   doCheck = false;
 
-  postInstall = ''
-    install -Dm644 data/japanese-readings.dic \
-      "$out/share/rufin/japanese-readings.dic"
-    install -Dm644 data/japanese-readings.LICENSE \
-      "$out/share/licenses/rufin/japanese-readings.LICENSE"
-    install -Dm644 data/io.github.screwys.Rufin.desktop \
-      "$out/share/applications/io.github.screwys.Rufin.desktop"
+  env.SSL_CERT_FILE = "${cacert}/etc/ssl/certs/ca-bundle.crt";
+
+  buildPhase = ''
+    runHook preBuild
+
+    cmake \
+      -S . \
+      -B build-cmake \
+      -G Ninja \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX="$out" \
+      -DRUFIN_BUILD_IDENTITY=stable \
+      -DRUFIN_CARGO_FROZEN=ON
+    cmake --build build-cmake --target rufin
+
+    runHook postBuild
+  '';
+
+  installPhase = ''
+    runHook preInstall
+
+    cmake --install build-cmake
     substituteInPlace "$out/share/applications/io.github.screwys.Rufin.desktop" \
       --replace-fail "Exec=rufin" "Exec=$out/bin/rufin"
-    install -Dm644 data/io.github.screwys.Rufin.metainfo.xml \
-      "$out/share/metainfo/io.github.screwys.Rufin.metainfo.xml"
-    install -Dm644 data/icons/hicolor/scalable/apps/io.github.screwys.Rufin.svg \
-      "$out/share/icons/hicolor/scalable/apps/io.github.screwys.Rufin.svg"
-    install -Dm644 -t "$out/share/icons/hicolor/scalable/actions" \
-      data/icons/hicolor/scalable/actions/*.svg
-    install -Dm644 -t "$out/share/icons/hicolor/scalable/status" \
-      data/icons/hicolor/scalable/status/*.svg
-    install -Dm644 -t "$out/share/icons/hicolor/512x512/apps" \
-      data/icons/hicolor/512x512/apps/*.png
-    install -Dm644 -t "$out/share/icons/hicolor/64x64/apps" \
-      data/icons/hicolor/64x64/apps/*.png
 
-    for po_file in crates/localization/locales/*.po; do
-      if [ -f "$po_file" ]; then
-        lang="$(basename "$po_file" .po)"
-        mkdir -p "$out/share/locale/$lang/LC_MESSAGES"
-        msgfmt "$po_file" -o "$out/share/locale/$lang/LC_MESSAGES/rufin.mo"
-      fi
-    done
+    runHook postInstall
   '';
 
   preFixup = ''
     gappsWrapperArgs+=(
       --set-default RUFIN_LOCALEDIR "$out/share/locale"
       --set-default SSL_CERT_FILE "${cacert}/etc/ssl/certs/ca-bundle.crt"
-      --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "$GST_PLUGIN_SYSTEM_PATH_1_0"
     )
   '';
 
